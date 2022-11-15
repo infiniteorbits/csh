@@ -300,7 +300,7 @@ void csp_if_eth_init(csp_iface_t * iface, char * ifname) {
      * CSP INTERFACE
      */
 
-	/* Regsiter interface */
+	/* Register interface */
 	iface->name = "ETH",
 	iface->nexthop = &csp_if_eth_tx,
 	csp_iflist_add(iface);
