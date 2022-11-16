@@ -46,7 +46,7 @@ static int rewl_log_slash(struct slash *slash) {
 
 slash_command(rewl_log, rewl_log_slash, NULL, "Log REWL data");
 
-int sine(float t_sec, int amp, int freq)
+int sine(float t_sec, int amp, float freq)
 {
 	double x = freq * 2 * 3.1416 * t_sec;
 	return (amp * sin(x));
@@ -57,7 +57,7 @@ static int rewl_sine_slash(struct slash *slash) {
 
 	int node = slash_dfl_node;
     uint32_t amplitude = 0;
-    uint32_t freq = 0;
+    float freq = 0;
 	uint32_t rate = 100;
 
     optparse_t * parser = optparse_new("rewl_sine", "<amplitude> <freq>");
@@ -85,15 +85,15 @@ static int rewl_sine_slash(struct slash *slash) {
 		return SLASH_EINVAL;
 	}
 
-    freq = strtoul(slash->argv[argi], &endptr, 10);
+    freq = strtod(slash->argv[argi], &endptr);
 
-	printf("Applying amplitude of %u at %u Hz on node %u with a rate of %u\n", amplitude, freq, node, rate);
+	printf("Applying amplitude of %u at %f Hz on node %u with a rate of %u\n", amplitude, freq, node, rate);
 
-	param_t * amplitude_dist = param_list_find_id(0, 157);
-	if (amplitude_dist == NULL) {
-		printf("Could not find the amplitude_dist parameter on node %u\n", node);
-		return SLASH_EINVAL;
-	}
+	// param_t * amplitude_dist = param_list_find_id(node, 157);
+	// if (amplitude_dist == NULL) {
+	// 	printf("Could not find the amplitude_dist parameter on node %u\n", node);
+	// 	return SLASH_EINVAL;
+	// }
 
 	int ms = 1000 / rate;
 
@@ -103,8 +103,8 @@ static int rewl_sine_slash(struct slash *slash) {
 			break;
 		t_sec += 1.0 / (float)rate;
 		int disturbance = sine(t_sec, amplitude, freq);
-		// printf("sine %d\n", disturbance);
-		param_set_int16(amplitude_dist, disturbance);
+		printf("sine %d\n", disturbance);
+		// param_set_int16(amplitude_dist, disturbance);
 	}
 
 
