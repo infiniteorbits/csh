@@ -11,6 +11,10 @@
 #include <param/param_queue.h>
 #include <param/param_client.h>
 #include <slash/slash.h>
+#include <math.h>
+
+#include <slash/optparse.h>
+#include <slash/dflopt.h>
 
 static char rewl_pull_buf[25];
 static param_queue_t rewl_pull_q = {
@@ -41,3 +45,70 @@ static int rewl_log_slash(struct slash *slash) {
 }
 
 slash_command(rewl_log, rewl_log_slash, NULL, "Log REWL data");
+
+int sine(float t_sec, int amp, int freq)
+{
+	double x = freq * 2 * 3.1416 * t_sec;
+	return (amp * sin(x));
+}
+
+
+static int rewl_sine_slash(struct slash *slash) {
+
+	int node = slash_dfl_node;
+    uint32_t amplitude = 0;
+    uint32_t freq = 0;
+	uint32_t rate = 100;
+
+    optparse_t * parser = optparse_new("rewl_sine", "<amplitude> <freq>");
+	optparse_add_int(parser, 'n', "node", "NUM", 0, &node, "node (default = <env>)");
+	optparse_add_unsigned(parser, 'r', "rate", "NUM", 0, &rate, "update rate (default = 100 Hz)");
+    optparse_add_help(parser);
+
+    int argi = optparse_parse(parser, slash->argc - 1, (const char **) slash->argv + 1);
+    if (argi < 0) {
+	    return SLASH_EINVAL;
+    }
+
+	if (++argi >= slash->argc) {
+		printf("missing amplitude parameter\n");
+        optparse_del(parser);
+		return SLASH_EINVAL;
+	}
+
+    char * endptr;
+    amplitude = strtoul(slash->argv[argi], &endptr, 10);
+
+	if (++argi >= slash->argc) {
+		printf("missing frequency parameter\n");
+        optparse_del(parser);
+		return SLASH_EINVAL;
+	}
+
+    freq = strtoul(slash->argv[argi], &endptr, 10);
+
+	printf("Applying amplitude of %u at %u Hz on node %u with a rate of %u\n", amplitude, freq, node, rate);
+
+	param_t * amplitude_dist = param_list_find_id(0, 157);
+	if (amplitude_dist == NULL) {
+		printf("Could not find the amplitude_dist parameter on node %u\n", node);
+		return SLASH_EINVAL;
+	}
+
+	int ms = 1000 / rate;
+
+	float t_sec = 0.0;
+	while(1) {
+		if (slash_wait_interruptible(slash, ms) != 0)
+			break;
+		t_sec += 1.0 / (float)rate;
+		int disturbance = sine(t_sec, amplitude, freq);
+		// printf("sine %d\n", disturbance);
+		param_set_int16(amplitude_dist, disturbance);
+	}
+
+
+	return SLASH_SUCCESS;
+}
+
+slash_command(rewl_sine, rewl_sine_slash, NULL, "Apply sinusoidal offset to amplitude");
