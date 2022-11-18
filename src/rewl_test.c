@@ -49,7 +49,7 @@ slash_command(rewl_log, rewl_log_slash, NULL, "Log REWL data");
 int16_t sine(float t_sec, int amp, float freq)
 {
 	double x = freq * 2 * 3.1416 * t_sec;
-	return (amp * sin(x));
+	return (amp * cosf(x));
 }
 
 
@@ -59,10 +59,13 @@ static int rewl_sine_slash(struct slash *slash) {
     uint32_t amplitude = 0;
     float freq = 0;
 	uint32_t rate = 100;
+	uint32_t param_push_timeout = 10;
+
 
     optparse_t * parser = optparse_new("rewl_sine", "<amplitude> <freq>");
 	optparse_add_int(parser, 'n', "node", "NUM", 0, &node, "node (default = <env>)");
 	optparse_add_unsigned(parser, 'r', "rate", "NUM", 0, &rate, "update rate (default = 100 Hz)");
+	optparse_add_unsigned(parser, 't', "timeout", "NUM", 0, &param_push_timeout, "timeout for updating parameters (default = 10 ms)");
     optparse_add_help(parser);
 
     int argi = optparse_parse(parser, slash->argc - 1, (const char **) slash->argv + 1);
@@ -87,7 +90,6 @@ static int rewl_sine_slash(struct slash *slash) {
 
     freq = strtod(slash->argv[argi], &endptr);
 
-	printf("Applying amplitude of %u at %f Hz on node %u with a rate of %u\n", amplitude, freq, node, rate);
 
 	param_t * amplitude_dist = param_list_find_id(node, 157);
 	if (amplitude_dist == NULL) {
@@ -95,20 +97,29 @@ static int rewl_sine_slash(struct slash *slash) {
 		return SLASH_EINVAL;
 	}
 
-	int ms = 1000 / rate;
+	int ms = (int)(1000.0 / (float)rate) - param_push_timeout;
+	if (ms < 0 && param_push_timeout != 0)
+	{
+		printf("Decrease rate -r or timeout -t. Max rate is %i \n", 1000 / param_push_timeout);
+		return SLASH_SUCCESS;
+	}
 
+	printf("Applying disturbance with amplitude of %u and frequency of %f Hz on node %u with an update rate of %u Hz, updating parameters with %u ms timeout \n", amplitude, freq, node, rate, param_push_timeout);
 	float t_sec = 0.0;
 	while(1) {
 		if (slash_wait_interruptible(slash, ms) != 0)
 			break;
-		t_sec += 1.0 / (float)rate;
+		t_sec += (1.0 / (float)rate);
+		// printf("t_sec is %f \n", t_sec);
 		int16_t disturbance = sine(t_sec, amplitude, freq);
 		// printf("sine %d\n", disturbance);
 		param_set_int16(amplitude_dist, disturbance);
-		param_push_single(amplitude_dist, -1, NULL, 0, node, slash_dfl_timeout, 2);
+		param_push_single(amplitude_dist, -1, NULL, 0, node, param_push_timeout, 2);
 	}
 
-
+	param_set_int16(amplitude_dist, 0);
+	param_push_single(amplitude_dist, -1, NULL, 0, node, slash_dfl_timeout, 2);
+	
 	return SLASH_SUCCESS;
 }
 
