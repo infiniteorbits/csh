@@ -49,7 +49,7 @@ slash_command(rewl_log, rewl_log_slash, NULL, "Log REWL data");
 int16_t sine(float t_sec, int amp, float freq)
 {
 	double x = freq * 2 * 3.1416 * t_sec;
-	return (amp * cosf(x));
+	return (amp * sinf(x));
 }
 
 
