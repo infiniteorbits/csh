@@ -17,3 +17,6 @@ builddir
 *.csv
 *.vmem
 *.log
+.cache
+.codechecker
+sysroot
