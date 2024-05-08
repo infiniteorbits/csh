@@ -1,15 +1,16 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <errno.h>
 #include <unistd.h>
 #include <pthread.h>
 #include <sys/utsname.h>
 #include <time.h>
+#include <signal.h>
 
 #include <slash/slash.h>
 #include <slash/dflopt.h>
 
 #include <csp/csp.h>
-#include <csp/csp_yaml.h>
 #include <csp/csp_hooks.h>
 
 #include <curl/curl.h>
@@ -39,6 +40,14 @@ VMEM_DEFINE_FILE(commands, "cmd", "commands.vmem", 2048);
 #ifdef PARAM_HAVE_SCHEDULER
 VMEM_DEFINE_FILE(schedule, "sch", "schedule.vmem", 2048);
 #endif
+
+#define CMD_NUM_ELEMENTS 0x200
+#define SCH_NUM_ELEMENTS 0x200
+
+VMEM_DEFINE_FILE(cmd_hash, "cmd_hash", "cmd_hash.vmem", 4*CMD_NUM_ELEMENTS);
+VMEM_DEFINE_FILE(cmd_store, "cmd_store", "cmd_store.vmem", 0x200*CMD_NUM_ELEMENTS);
+VMEM_DEFINE_FILE(sch_hash, "sch_hash", "sch_hash.vmem", 4*SCH_NUM_ELEMENTS);
+VMEM_DEFINE_FILE(sch_store, "sch_store", "sch_store.vmem", 0x100*SCH_NUM_ELEMENTS);
 
 int slash_prompt(struct slash * slash) {
 
@@ -79,6 +88,7 @@ int slash_prompt(struct slash * slash) {
 
 	}
 
+#ifdef PARAM_HAVE_COMMANDS
 	extern param_queue_t param_queue;
 	if (param_queue.type == PARAM_QUEUE_TYPE_GET) {
 
@@ -108,7 +118,7 @@ int slash_prompt(struct slash * slash) {
 		len += 2 + strlen(param_queue.name);
 
 	}
-
+#endif
 	/* End of breadcrumb */
 	fore = back;
 	printf(" \e[0m\e[0;38;5;%um \e[0m", fore);
@@ -157,10 +167,23 @@ static int cmd_sch_update(struct slash *slash) {
 slash_command_sub(param_server, start, cmd_sch_update, "", "Update param server each second");
 #endif
 
-	
+/* Calling this variable "slash" somehow conflicts with __attribute__((section("slash"))) from "#define __slash_command()",
+	causing the linker error: symbol `slash' is already defined */
+static struct slash *slash2;
+#define slash slash2
+
+static void csh_cleanup(void) {
+	slash_destroy(slash);  // Restores terminal
+	curl_global_cleanup();
+}
+
+static void sigint_handler(int signum) {
+	/* Calls atexit() to handle cleanup */
+	exit(signum); // Exit the program with the signal number as the exit code
+}
+
 int main(int argc, char **argv) {
 
-	static struct slash *slash;
 	int remain, index, i, c, p = 0;
 
 	char * initfile = "init.csh";
@@ -238,8 +261,6 @@ int main(int argc, char **argv) {
 	slash_run(slash, path, 0);
 
 
-
-
 	/* Init file */
 	char buildpath[100];
 	if (dirname && strlen(dirname)) {
@@ -249,6 +270,21 @@ int main(int argc, char **argv) {
 	}
 	printf("\033[34m  Init file: %s\033[0m\n", buildpath);
 	int ret = slash_run(slash, buildpath, 0);
+
+	{	/* Setting up signal handlers */
+
+		atexit(csh_cleanup);
+
+		if (signal(SIGINT, sigint_handler) == SIG_ERR) {
+			perror("signal");
+			exit(EXIT_FAILURE);
+		}
+
+		if (signal(SIGTERM, sigint_handler) == SIG_ERR) {
+			perror("signal");
+			exit(EXIT_FAILURE);
+		}
+	}
 
 	/* Interactive or one-shot mode */
 	if (ret != SLASH_EXIT && remain > 0) {
@@ -282,9 +318,6 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	printf("\n");
-	slash_destroy(slash);
-    curl_global_cleanup();
-
+	/* Cleanup handled by atexit() */
 	return ret;
 }
